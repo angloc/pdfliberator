@@ -1,0 +1,631 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF Splitter & OCR</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/pdf-lib/dist/pdf-lib.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.11.338/pdf.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.7.1/jszip.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .spinner {
+            border: 4px solid rgba(0, 0, 0, 0.1);
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            border-left-color: #4f46e5;
+            animation: spin 1s ease infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="bg-gray-100 flex items-center justify-center min-h-screen">
+    <div class="bg-white rounded-xl shadow-lg p-8 m-4 w-full max-w-2xl">
+        
+        <div class="mb-6">
+            <h1 class="text-3xl font-bold text-gray-800">PDF Splitter & OCR</h1>
+            <p class="text-gray-500 mt-1">Split large PDFs and then extract text and images using AI.</p>
+        </div>
+
+        <!-- Step 1: Upload -->
+        <div class="mb-6">
+            <label class="block text-sm font-medium text-gray-700 mb-2">1. Upload your PDF file</label>
+            <div class="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-md">
+                <div class="space-y-1 text-center">
+                    <svg class="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true"><path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg>
+                    <div class="flex text-sm text-gray-600"><label for="pdf-upload" class="relative cursor-pointer bg-white rounded-md font-medium text-indigo-600 hover:text-indigo-500"><span>Upload a file</span><input id="pdf-upload" name="pdf-upload" type="file" class="sr-only" accept=".pdf"></label><p class="pl-1">or drag and drop</p></div>
+                    <p id="file-name" class="text-xs text-gray-500">PDF up to 100MB</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 2: Controls -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+            <div>
+                <label for="max-pages" class="block text-sm font-medium text-gray-700">2. Max pages per file</label>
+                <input type="number" name="max-pages" id="max-pages" value="1000" min="1" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+            </div>
+            <div>
+                <label for="max-size" class="block text-sm font-medium text-gray-700">3. Max size per file (MB)</label>
+                <input type="number" name="max-size" id="max-size" value="48" min="1" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+            </div>
+        </div>
+        
+        <button id="process-btn" class="w-full flex justify-center py-3 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:bg-gray-400 disabled:cursor-not-allowed" disabled>Split PDF</button>
+
+        <!-- Step 3: Results & OCR -->
+        <div id="output-section" class="hidden mt-8">
+            <div id="file-info" class="bg-gray-50 p-4 rounded-lg mb-4"><h3 class="font-semibold text-gray-800">Original File</h3><div class="text-sm text-gray-600 mt-2"><p><strong>Name:</strong> <span id="info-name"></span></p><p><strong>Total Pages:</strong> <span id="info-pages"></span></p><p><strong>Total Size:</strong> <span id="info-size"></span> MB</p></div></div>
+            <div id="loading" class="hidden flex flex-col items-center justify-center p-6"><div class="spinner"></div><p id="loading-text" class="text-gray-600 mt-3">Processing... this may take a moment.</p></div>
+            
+            <div id="download-links" class="mt-4">
+                <h3 class="font-semibold text-gray-800 mb-2">4. Select Files for Extraction</h3>
+                 <div class="flex items-center justify-between mb-3 bg-gray-50 p-2 rounded-md">
+                    <div class="flex items-center">
+                        <input id="select-all" type="checkbox" class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                        <label for="select-all" class="ml-2 block text-sm font-medium text-gray-700">Select All</label>
+                    </div>
+                </div>
+                <div id="links-container" class="space-y-2"></div>
+            </div>
+
+            <div id="ocr-section" class="mt-6">
+                 <button id="extract-btn" class="w-full flex justify-center py-3 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:bg-gray-400 disabled:cursor-not-allowed" disabled>
+                    Extract Text & Images with Mistral
+                </button>
+                <div id="processing-controls" class="hidden mt-4 text-center">
+                    <p id="processing-status" class="text-gray-700 mb-4"></p>
+                    <div class="flex justify-center space-x-4">
+                        <button id="edit-json-btn" class="py-2 px-4 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-400">Edit JSON</button>
+                        <button id="retry-pdf-btn" class="py-2 px-4 bg-yellow-500 text-white rounded-md hover:bg-yellow-600 disabled:bg-gray-400">Retry PDF</button>
+                        <button id="next-pdf-btn" class="hidden py-2 px-4 bg-indigo-600 text-white rounded-md hover:bg-indigo-700">Next PDF</button>
+                        <button id="download-zip-btn" class="hidden py-2 px-4 bg-green-600 text-white rounded-md hover:bg-green-700">Download ZIP</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="error-message" class="hidden mt-4 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-md relative" role="alert"><strong class="font-bold">Error:</strong> <span class="block sm:inline" id="error-text"></span></div>
+    </div>
+
+    <!-- API Key Modal -->
+    <div id="api-key-modal" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full flex items-center justify-center z-50">
+        <div class="bg-white p-8 rounded-lg shadow-xl w-full max-w-md m-4">
+            <h2 class="text-2xl font-bold mb-4">Mistral API Key Required</h2>
+            <p class="text-gray-600 mb-6">Please enter your Mistral API key. The key is saved in your browser's local storage and is never sent anywhere else.</p>
+            <input type="password" id="api-key-input" class="w-full p-2 border border-gray-300 rounded-md mb-6" placeholder="Your Mistral API Key">
+            <div class="flex justify-end space-x-4">
+                <button id="cancel-api-key" class="py-2 px-4 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300">Cancel</button>
+                <button id="save-api-key" class="py-2 px-4 bg-indigo-600 text-white rounded-md hover:bg-indigo-700">Save and Continue</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- JSON Edit Modal -->
+    <div id="json-edit-modal" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full flex items-center justify-center z-50">
+        <div class="bg-white p-8 rounded-lg shadow-xl w-full max-w-2xl m-4 flex flex-col" style="height: 90vh;">
+            <h2 id="json-edit-title" class="text-2xl font-bold mb-4">Edit JSON</h2>
+            <p id="json-edit-details" class="text-gray-600 mb-4 font-mono bg-gray-50 p-2 rounded-md"></p>
+            <div class="flex-grow">
+                <textarea id="json-edit-textarea" class="w-full h-full p-2 border border-gray-300 rounded-md font-mono text-sm" style="resize: vertical;"></textarea>
+            </div>
+            <div class="flex justify-end space-x-4 mt-4">
+                <button id="cancel-json-edit" class="py-2 px-4 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300">Cancel</button>
+                <button id="save-json-edit-btn" class="py-2 px-4 bg-green-600 text-white rounded-md hover:bg-green-700">Save Changes</button>
+            </div>
+        </div>
+    </div>
+
+
+    <script>
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.11.338/pdf.worker.min.js';
+
+        // --- DOM Elements ---
+        const pdfUpload = document.getElementById('pdf-upload');
+        const fileNameDisplay = document.getElementById('file-name');
+        const maxPagesInput = document.getElementById('max-pages');
+        const maxSizeInput = document.getElementById('max-size');
+        const processBtn = document.getElementById('process-btn');
+        const outputSection = document.getElementById('output-section');
+        const infoName = document.getElementById('info-name');
+        const infoPages = document.getElementById('info-pages');
+        const infoSize = document.getElementById('info-size');
+        const loadingIndicator = document.getElementById('loading');
+        const loadingText = document.getElementById('loading-text');
+        const linksContainer = document.getElementById('links-container');
+        const selectAllCheckbox = document.getElementById('select-all');
+        const extractBtn = document.getElementById('extract-btn');
+        const errorMessage = document.getElementById('error-message');
+        const errorText = document.getElementById('error-text');
+        // Processing Controls
+        const processingControls = document.getElementById('processing-controls');
+        const processingStatus = document.getElementById('processing-status');
+        const editJsonBtn = document.getElementById('edit-json-btn');
+        const retryPdfBtn = document.getElementById('retry-pdf-btn');
+        const nextPdfBtn = document.getElementById('next-pdf-btn');
+        const downloadZipBtn = document.getElementById('download-zip-btn');
+        // Modals
+        const apiKeyModal = document.getElementById('api-key-modal');
+        const apiKeyInput = document.getElementById('api-key-input');
+        const saveApiKeyBtn = document.getElementById('save-api-key');
+        const cancelApiKeyBtn = document.getElementById('cancel-api-key');
+        // JSON Edit Modal elements
+        const jsonEditModal = document.getElementById('json-edit-modal');
+        const jsonEditTitle = document.getElementById('json-edit-title');
+        const jsonEditDetails = document.getElementById('json-edit-details');
+        const jsonEditTextarea = document.getElementById('json-edit-textarea');
+        const cancelJsonEditBtn = document.getElementById('cancel-json-edit');
+        const saveJsonEditBtn = document.getElementById('save-json-edit-btn');
+        
+        // --- State Variables ---
+        let uploadedFile = null;
+        let generatedPdfs = [];
+        let jsonEditPromise = {};
+        let selectedFilesForExtraction = [];
+        let currentPdfIndex = 0;
+        let ocrResults = []; // { pdfName, pageResults: [{markdown, annotations}], pageCanvases, error? }
+
+        // --- Event Listeners ---
+        pdfUpload.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file && file.type === 'application/pdf') {
+                uploadedFile = file;
+                fileNameDisplay.textContent = file.name;
+                processBtn.disabled = false;
+                hideError();
+                outputSection.classList.add('hidden');
+                generatedPdfs = [];
+            } else {
+                uploadedFile = null;
+                fileNameDisplay.textContent = 'Please select a valid PDF file.';
+                processBtn.disabled = true;
+                showError('Invalid file type. Please upload a PDF.');
+            }
+        });
+
+        processBtn.addEventListener('click', handlePdfProcessing);
+        extractBtn.addEventListener('click', handleExtraction);
+        selectAllCheckbox.addEventListener('change', handleSelectAll);
+        
+        saveApiKeyBtn.addEventListener('click', () => {
+            const apiKey = apiKeyInput.value.trim();
+            if (apiKey) {
+                localStorage.setItem('mistralApiKey', apiKey);
+                apiKeyModal.classList.add('hidden');
+                handleExtraction(apiKey);
+            } else {
+                alert('Please enter a valid API key.');
+            }
+        });
+        cancelApiKeyBtn.addEventListener('click', () => {
+            apiKeyModal.classList.add('hidden');
+            setLoading(false);
+        });
+
+        // Processing Controls Listeners
+        editJsonBtn.addEventListener('click', handleEditJson);
+        retryPdfBtn.addEventListener('click', () => processPdfChunk(true));
+        nextPdfBtn.addEventListener('click', () => {
+            currentPdfIndex++;
+            processPdfChunk();
+        });
+        downloadZipBtn.addEventListener('click', assembleAndDownloadZip);
+        
+        // JSON Modal Listeners
+        cancelJsonEditBtn.addEventListener('click', () => {
+            jsonEditModal.classList.add('hidden');
+            if (jsonEditPromise.resolve) jsonEditPromise.resolve(null);
+        });
+        saveJsonEditBtn.addEventListener('click', () => {
+            jsonEditModal.classList.add('hidden');
+            if (jsonEditPromise.resolve) jsonEditPromise.resolve(jsonEditTextarea.value);
+        });
+
+
+        // --- Core Functions ---
+        async function handlePdfProcessing() {
+            if (!uploadedFile) { showError('No file selected.'); return; }
+            setLoading(true, 'Splitting PDF...');
+            outputSection.classList.remove('hidden');
+            linksContainer.innerHTML = '';
+            generatedPdfs = [];
+            hideError();
+
+            const maxPages = parseInt(maxPagesInput.value, 10);
+            const maxSizeMB = parseInt(maxSizeInput.value, 10);
+            const maxSizeInBytes = maxSizeMB * 1024 * 1024;
+
+            try {
+                const fileBuffer = await uploadedFile.arrayBuffer();
+                const { PDFDocument } = PDFLib;
+                const originalPdf = await PDFDocument.load(fileBuffer);
+                const totalPages = originalPdf.getPageCount();
+
+                infoName.textContent = uploadedFile.name;
+                infoPages.textContent = totalPages;
+                infoSize.textContent = (uploadedFile.size / (1024 * 1024)).toFixed(2);
+                
+                if (totalPages <= maxPages && uploadedFile.size <= maxSizeInBytes) {
+                    const blob = new Blob([fileBuffer], { type: 'application/pdf' });
+                    const name = `${uploadedFile.name.replace('.pdf', '')}_complete.pdf`;
+                    generatedPdfs.push({ blob, name });
+                    createDownloadElement({ blob, name }, 0);
+                } else {
+                    const pageRanges = calculatePageRanges(totalPages, uploadedFile.size, maxPages, maxSizeInBytes);
+                    for (let i = 0; i < pageRanges.length; i++) {
+                        const range = pageRanges[i];
+                        const newPdfDoc = await PDFDocument.create();
+                        const pageIndices = Array.from({ length: range.end - range.start + 1 }, (_, k) => range.start + k);
+                        const copiedPages = await newPdfDoc.copyPages(originalPdf, pageIndices);
+                        copiedPages.forEach(page => newPdfDoc.addPage(page));
+                        
+                        const newPdfBytes = await newPdfDoc.save();
+                        const blob = new Blob([newPdfBytes], { type: 'application/pdf' });
+                        const name = `${uploadedFile.name.replace('.pdf', '')}_part_${i + 1}.pdf`;
+                        generatedPdfs.push({ blob, name });
+                        createDownloadElement({ blob, name }, i);
+                    }
+                }
+            } catch (err) {
+                console.error("PDF processing error:", err);
+                showError('Could not process the PDF. It might be corrupted or protected.');
+            } finally {
+                setLoading(false);
+                updateExtractBtnState();
+            }
+        }
+        
+        function handleExtraction() {
+            const apiKey = localStorage.getItem('mistralApiKey');
+            if (!apiKey) {
+                apiKeyModal.classList.remove('hidden');
+                apiKeyInput.focus();
+                return;
+            }
+            selectedFilesForExtraction = generatedPdfs.filter((_, index) => 
+                document.getElementById(`pdf-select-${index}`)?.checked
+            );
+            if (selectedFilesForExtraction.length === 0) {
+                showError("No files selected for extraction.");
+                return;
+            }
+
+            hideError();
+            extractBtn.classList.add('hidden');
+            processingControls.classList.remove('hidden');
+            currentPdfIndex = 0;
+            ocrResults = new Array(selectedFilesForExtraction.length).fill(null);
+            processPdfChunk();
+        }
+
+        async function processPdfChunk(isRetry = false) {
+            if (currentPdfIndex >= selectedFilesForExtraction.length) return;
+
+            const apiKey = localStorage.getItem('mistralApiKey');
+            const currentFile = selectedFilesForExtraction[currentPdfIndex];
+            setLoading(true, `Processing PDF ${currentPdfIndex + 1}/${selectedFilesForExtraction.length}: ${currentFile.name}`);
+            retryPdfBtn.disabled = true;
+            editJsonBtn.disabled = true;
+            nextPdfBtn.disabled = true;
+
+            try {
+                const pdfData = await currentFile.blob.arrayBuffer();
+                const pdf = await pdfjsLib.getDocument({ data: pdfData }).promise;
+                const pageCanvases = [];
+                const pageResults = [];
+
+                setLoading(true, `Rendering ${pdf.numPages} pages for ${currentFile.name}...`);
+                for (let i = 1; i <= pdf.numPages; i++) {
+                    const page = await pdf.getPage(i);
+                    const viewport = page.getViewport({ scale: 1.5 });
+                    const canvas = document.createElement('canvas');
+                    canvas.height = viewport.height;
+                    canvas.width = viewport.width;
+                    const context = canvas.getContext('2d');
+                    await page.render({ canvasContext: context, viewport: viewport }).promise;
+                    pageCanvases.push(canvas);
+                }
+                
+                for (let i = 0; i < pageCanvases.length; i++) {
+                    setLoading(true, `Extracting page ${i + 1}/${pageCanvases.length} of ${currentFile.name}...`);
+                    const canvas = pageCanvases[i];
+                    const pageImageBlob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+                    const result = await callOcrApi(pageImageBlob, apiKey);
+                    pageResults.push(result);
+                    // Add a small delay to be kinder to the API and browser
+                    await new Promise(resolve => setTimeout(resolve, 250));
+                }
+
+                ocrResults[currentPdfIndex] = {
+                    pdfName: currentFile.name,
+                    pageResults,
+                    pageCanvases,
+                    error: null
+                };
+
+            } catch(err) {
+                console.error(err);
+                let errorMessage = 'An unknown error occurred.';
+                let errorJson = {};
+
+                if (err instanceof TypeError && err.message.includes('Failed to fetch')) {
+                    errorMessage = 'Network Error: The browser failed to send the request. This may be due to a Content Security Policy (CSP), a network disconnection, or a browser extension blocking the request.';
+                    errorJson = { error: errorMessage, raw: 'TypeError: Failed to fetch' };
+                } else if (err.type === 'api' && err.data) {
+                    errorMessage = err.data.error?.message || (typeof err.data.error === 'string' ? err.data.error : null) || err.data.detail || JSON.stringify(err.data);
+                    errorJson = { error: errorMessage, raw: err.data };
+                } else if (err.type === 'json') {
+                    errorMessage = err.originalError?.message || 'Invalid JSON response from API.';
+                    errorJson = { error: errorMessage, raw: err.content };
+                }
+
+                ocrResults[currentPdfIndex] = { 
+                    pdfName: currentFile.name,
+                    json: errorJson, // Use 'json' key for consistency in error object
+                    pageCanvases: [],
+                    error: err
+                };
+            } finally {
+                setLoading(false);
+                updateProcessingControls();
+            }
+        }
+        
+        async function callOcrApi(pageImageBlob, apiKey) {
+            const endpoint = 'https://api.mistral.ai/v1/vision/ocr';
+            const formData = new FormData();
+            formData.append('image_bytes', pageImageBlob, 'page.png');
+            formData.append('extraction_options', JSON.stringify({
+                "output_format": "markdown_with_annotations"
+            }));
+
+            const response = await fetch(endpoint, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${apiKey}`},
+                body: formData
+            });
+
+            const responseData = await response.json();
+
+            if (!response.ok) {
+                throw { type: 'api', status: response.status, data: responseData };
+            }
+
+            if (!responseData || responseData.length === 0) {
+                 throw { type: 'json', content: JSON.stringify(responseData), originalError: new Error('Empty or invalid response from OCR API.') };
+            }
+
+            return responseData[0]; // Result for the single page
+        }
+        
+        async function handleEditJson() {
+            const currentResult = ocrResults[currentPdfIndex];
+            if (!currentResult) return;
+            // If there's an error, edit the 'json' property, otherwise edit the 'pageResults'
+            const contentToEdit = JSON.stringify(currentResult.error ? currentResult.json : currentResult.pageResults, null, 2);
+            
+            const editedContent = await showJsonEditDialog(contentToEdit, currentResult.error);
+            
+            if (editedContent) {
+                try {
+                    const parsed = JSON.parse(editedContent);
+                    if (currentResult.error) {
+                         ocrResults[currentPdfIndex].json = parsed;
+                    } else {
+                         ocrResults[currentPdfIndex].pageResults = parsed;
+                    }
+                    ocrResults[currentPdfIndex].error = null;
+                    updateProcessingControls();
+                } catch(e) {
+                    showError("Invalid JSON format. Please fix and save again.");
+                }
+            }
+        }
+
+        async function assembleAndDownloadZip() {
+            setLoading(true, "Assembling final ZIP file...");
+            const zip = new JSZip();
+            const imgFolder = zip.folder("images");
+            let concatenatedMarkdown = `# OCR Extraction from ${uploadedFile.name}\n\n`;
+            let totalPagesProcessed = 0;
+            let extractedImageCounter = 0;
+
+            for (const result of ocrResults) {
+                if (!result || result.error) {
+                    concatenatedMarkdown += `\n\n---\n\n## ERROR processing ${result.pdfName}\n\nCould not process this file. Please check the JSON or retry.\n\n---\n\n`;
+                    continue;
+                }
+                
+                concatenatedMarkdown += `\n\n---\n\n## Processing File: ${result.pdfName}\n\n`;
+
+                const { pageResults, pageCanvases } = result;
+                
+                for(let i=0; i<pageResults.length; i++) {
+                    const pageResult = pageResults[i];
+                    const canvas = pageCanvases[i];
+                    const context = canvas.getContext('2d');
+                    
+                    let pageMarkdown = pageResult.markdown || '';
+                    const annotations = pageResult.annotations;
+                    
+                    const currentPageNumber = totalPagesProcessed + i + 1;
+
+                    concatenatedMarkdown += `### Page ${currentPageNumber}\n\n`;
+                    const pageImageName = `page_${currentPageNumber}.png`;
+                    const pageImageBlob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+                    imgFolder.file(pageImageName, pageImageBlob);
+                    concatenatedMarkdown += `![Full view of Page ${currentPageNumber}](./images/${pageImageName})\n\n`;
+
+                    if (annotations && annotations.visuals) {
+                         for (const visual of annotations.visuals) {
+                            const { bounding_box, description, id } = visual;
+                            const { x, y, width, height } = bounding_box;
+
+                            if ([x, y, width, height].some(val => typeof val !== 'number' || val < 0) || width <= 0 || height <= 0) continue;
+                            
+                            const imageData = context.getImageData(x, y, width, height);
+                            const tempCanvas = document.createElement('canvas');
+                            tempCanvas.width = width;
+                            tempCanvas.height = height;
+                            tempCanvas.getContext('2d').putImageData(imageData, 0, 0);
+
+                            const extractedImageName = `extracted_${extractedImageCounter++}.png`;
+                            const imgBlob = await new Promise(resolve => tempCanvas.toBlob(resolve, 'image/png'));
+                            imgFolder.file(extractedImageName, imgBlob);
+                            
+                            const altText = description || `Extracted image ${extractedImageCounter}`;
+                            const finalPath = `![${altText}](./images/${extractedImageName})`;
+                            pageMarkdown = pageMarkdown.replaceAll(id, finalPath);
+                        }
+                    }
+                    concatenatedMarkdown += pageMarkdown;
+                }
+                totalPagesProcessed += pageCanvases.length;
+            }
+
+            zip.file("extraction.md", concatenatedMarkdown);
+            const zipBlob = await zip.generateAsync({ type: "blob" });
+            const zipUrl = URL.createObjectURL(zipBlob);
+            const downloadLink = document.createElement('a');
+            downloadLink.href = zipUrl;
+            downloadLink.download = `${uploadedFile.name.replace('.pdf', '')}_extraction.zip`;
+            document.body.appendChild(downloadLink);
+            downloadLink.click();
+            document.body.removeChild(downloadLink);
+            setLoading(false);
+        }
+
+        function showJsonEditDialog(content, error) {
+            return new Promise((resolve) => {
+                jsonEditPromise = { resolve };
+                jsonEditTextarea.value = content;
+                if (error) {
+                    jsonEditTitle.textContent = 'Edit Erroneous JSON';
+                    let detailMessage = 'An error occurred.';
+                     if (error instanceof TypeError && error.message.includes('Failed to fetch')) {
+                        detailMessage = 'Network Error: The browser failed to send the request. This may be due to a Content Security Policy (CSP), a network disconnection, or a browser extension blocking the request.';
+                    } else if (error.type === 'api' && error.data) {
+                        detailMessage = error.data.error?.message || (typeof error.data.error === 'string' ? error.data.error : null) || error.data.detail || JSON.stringify(error.data);
+                    } else if (error.type === 'json') {
+                        detailMessage = error.originalError?.message || 'Invalid JSON response from API.';
+                    }
+                    jsonEditDetails.textContent = detailMessage;
+                } else {
+                    jsonEditTitle.textContent = 'Review & Edit JSON';
+                    jsonEditDetails.textContent = 'You can make changes to the API response before proceeding.';
+                }
+                jsonEditModal.classList.remove('hidden');
+            });
+        }
+
+        // --- UI & State Helpers ---
+        function updateProcessingControls() {
+            const currentResult = ocrResults[currentPdfIndex];
+            const hasError = !!currentResult?.error;
+
+            if (hasError) {
+                processingStatus.textContent = `Error processing ${currentResult.pdfName}. Please edit the JSON or retry.`;
+                processingStatus.className = 'text-red-600 mb-4';
+                retryPdfBtn.disabled = false;
+            } else {
+                processingStatus.textContent = `Successfully processed ${currentResult.pdfName}.`;
+                processingStatus.className = 'text-green-700 mb-4';
+                retryPdfBtn.disabled = true;
+            }
+
+            editJsonBtn.disabled = !currentResult;
+            
+            if (currentPdfIndex < selectedFilesForExtraction.length - 1) {
+                nextPdfBtn.classList.remove('hidden');
+                nextPdfBtn.disabled = hasError;
+                downloadZipBtn.classList.add('hidden');
+            } else {
+                nextPdfBtn.classList.add('hidden');
+                downloadZipBtn.classList.remove('hidden');
+                downloadZipBtn.disabled = ocrResults.some(r => !r || r.error);
+            }
+        }
+
+        function calculatePageRanges(totalPages, totalSize, maxPages, maxSizeInBytes) {
+            const ranges = [];
+            if (totalPages === 0) return ranges;
+            const avgSizePerPage = totalSize / totalPages;
+            let currentChunkStartPage = 0; let pagesInCurrentChunk = 0;
+            for (let i = 0; i < totalPages; i++) {
+                pagesInCurrentChunk++;
+                const estimatedChunkSize = pagesInCurrentChunk * avgSizePerPage;
+                if (pagesInCurrentChunk >= maxPages || estimatedChunkSize >= maxSizeInBytes || i === totalPages - 1) {
+                    ranges.push({ start: currentChunkStartPage, end: i });
+                    currentChunkStartPage = i + 1; pagesInCurrentChunk = 0;
+                }
+            }
+            return ranges;
+        }
+
+        function createDownloadElement({ blob, name }, index) {
+            const url = URL.createObjectURL(blob);
+            const div = document.createElement('div');
+            div.className = 'flex items-center justify-between bg-gray-100 hover:bg-gray-200 p-3 rounded-md';
+            const leftDiv = document.createElement('div');
+            leftDiv.className = 'flex items-center';
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox'; checkbox.id = `pdf-select-${index}`;
+            checkbox.className = 'h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 pdf-chunk-select';
+            checkbox.addEventListener('change', updateExtractBtnState);
+            const label = document.createElement('label');
+            label.htmlFor = `pdf-select-${index}`; label.className = 'ml-3 text-sm text-gray-800';
+            label.textContent = `${name} (${(blob.size / (1024*1024)).toFixed(2)} MB)`;
+            const link = document.createElement('a');
+            link.href = url; link.download = name;
+            link.className = 'text-sm font-medium text-indigo-600 hover:text-indigo-500'; link.textContent = 'Download';
+            leftDiv.appendChild(checkbox); leftDiv.appendChild(label);
+            div.appendChild(leftDiv); div.appendChild(link);
+            linksContainer.appendChild(div);
+        }
+        
+        function updateExtractBtnState() {
+            const anyChecked = document.querySelectorAll('.pdf-chunk-select:checked').length > 0;
+            extractBtn.disabled = !anyChecked;
+        }
+
+        function handleSelectAll() {
+            document.querySelectorAll('.pdf-chunk-select').forEach(cb => cb.checked = selectAllCheckbox.checked);
+            updateExtractBtnState();
+        }
+        
+        function setLoading(isLoading, message = '') {
+            if (isLoading) {
+                loadingIndicator.classList.remove('hidden');
+                loadingText.textContent = message;
+                processBtn.disabled = true;
+                extractBtn.disabled = true;
+            } else {
+                loadingIndicator.classList.add('hidden');
+                processBtn.disabled = !uploadedFile;
+                updateExtractBtnState();
+            }
+        }
+
+        function showError(message) {
+            errorText.textContent = message;
+            errorMessage.classList.remove('hidden');
+        }
+
+        function hideError() {
+            errorMessage.classList.add('hidden');
+        }
+        
+        updateExtractBtnState();
+    </script>
+</body>
+</html>
+
+
